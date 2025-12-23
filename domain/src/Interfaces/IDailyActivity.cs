@@ -1,10 +1,9 @@
-namespace Heartbeat.Domain.Interfaces;
+namespace Heartbeat.Domain.Interfaces ;
 
-
-public interface IDailyActivity
-{
+  public interface IDailyActivity
+  {
     int Id { get; set; }
     int UserId { get; set; }
     DateOnly Date { get; set; }
     DateTime UpdatedAt { get; set; }
-}
+  }

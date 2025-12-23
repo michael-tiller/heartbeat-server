@@ -1,18 +1,15 @@
-using NUnit.Framework;
-using Heartbeat.Domain;
+namespace Heartbeat.Domain.Tests ;
 
-namespace Heartbeat.Domain.Tests;
-
-[TestFixture]
-public class UserTests
-{
+  [TestFixture]
+  public class UserTests
+  {
     [Test]
     public void GeneratePairCode_ReturnsSixCharacterCode()
     {
-        // Act
-        var code = User.GeneratePairCode();
+      // Act
+      string code = User.GeneratePairCode();
 
-        // Assert
-        Assert.That(code.Length, Is.EqualTo(6));
+      // Assert
+      Assert.That(code.Length, Is.EqualTo(6));
     }
-}
+  }

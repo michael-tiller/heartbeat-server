@@ -1,323 +1,301 @@
+using Heartbeat.Server.Health;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Heartbeat.Server;
-using Heartbeat.Server.Health;
 
-namespace Heartbeat.Server.Tests.Health;
+namespace Heartbeat.Server.Tests.Health ;
 
-/// <summary>
-/// Tests for DatabaseHealthCheck.
-/// Covers healthy path, failure path, exception handling, and error details.
-/// </summary>
-[TestFixture]
-public class DatabaseHealthCheckTests
-{
-    #region Healthy Path
-
+  /// <summary>
+  ///   Tests for DatabaseHealthCheck.
+  ///   Covers healthy path, failure path, exception handling, and error details.
+  /// </summary>
+  [TestFixture]
+  public class DatabaseHealthCheckTests
+  {
     [Test]
-    public async Task CheckHealthAsync_DatabaseAccessible_ReturnsHealthy()
+    public async Task CheckHealthAsync_CancellationRequested_ThrowsOperationCanceledException()
     {
-        // Arrange
-        using var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        using var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
+      // Arrange
+      await using SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
 
-        // Assert
-        Assert.That(result.Status, Is.EqualTo(HealthStatus.Healthy));
-    }
+      await using AppDbContext dbContext = new(options);
+      dbContext.Database.EnsureCreated();
 
-    [Test]
-    public async Task CheckHealthAsync_DatabaseAccessible_ReturnsDescriptiveMessage()
-    {
-        // Arrange
-        using var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        using var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
 
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
+      using CancellationTokenSource cts = new();
+      cts.Cancel();
 
-        // Assert
-        Assert.That(result.Description, Does.Contain("accessible"));
-    }
-
-    [Test]
-    public async Task CheckHealthAsync_DatabaseAccessible_NoException()
-    {
-        // Arrange
-        using var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        using var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
-
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
-
-        // Assert
-        Assert.That(result.Exception, Is.Null);
-    }
-
-    #endregion
-
-    #region Failure Path - Connection Closed
-
-    [Test]
-    public async Task CheckHealthAsync_ConnectionClosed_ReturnsUnhealthy()
-    {
-        // Arrange
-        var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        
-        // Close connection to simulate database unavailable
-        connection.Close();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
-
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
-
-        // Assert
+      // Act & Assert - should handle or propagate cancellation
+      // Note: The actual behavior depends on implementation
+      // Some implementations catch all exceptions, some propagate cancellation
+      try
+      {
+        HealthCheckResult result = await healthCheck.CheckHealthAsync(context, cts.Token);
+        // If it catches the cancellation, it should return unhealthy
         Assert.That(result.Status, Is.EqualTo(HealthStatus.Unhealthy));
+      }
+      catch (OperationCanceledException)
+      {
+        // If it propagates cancellation, that's also acceptable
+        Assert.Pass("Cancellation was propagated correctly");
+      }
     }
 
     [Test]
     public async Task CheckHealthAsync_ConnectionClosed_ReturnsExceptionDetails()
     {
-        // Arrange
-        var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        
-        // Close connection to simulate database unavailable
-        connection.Close();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
+      // Arrange
+      SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
 
-        // Assert - should have exception details when connection fails
-        Assert.That(result.Exception, Is.Not.Null);
+      AppDbContext dbContext = new(options);
+      dbContext.Database.EnsureCreated();
+
+      // Close connection to simulate database unavailable
+      connection.Close();
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert - should have exception details when connection fails
+      Assert.That(result.Exception, Is.Not.Null);
     }
 
-    #endregion
-
-    #region Failure Path - Invalid Connection String
-
     [Test]
-    public async Task CheckHealthAsync_InvalidConnectionString_ReturnsUnhealthy()
+    public async Task CheckHealthAsync_ConnectionClosed_ReturnsUnhealthy()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=nonexistent_path/invalid.db")
-            .Options;
-        
-        using var dbContext = new AppDbContext(options);
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
+      // Arrange
+      SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
 
-        // Assert
-        Assert.That(result.Status, Is.EqualTo(HealthStatus.Unhealthy));
+      AppDbContext dbContext = new(options);
+      dbContext.Database.EnsureCreated();
+
+      // Close connection to simulate database unavailable
+      connection.Close();
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Status, Is.EqualTo(HealthStatus.Unhealthy));
     }
 
-    #endregion
+    [Test]
+    public async Task CheckHealthAsync_DatabaseAccessible_NoException()
+    {
+      // Arrange
+      await using SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-    #region Exception Handling
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
+
+      await using AppDbContext dbContext = new(options);
+      dbContext.Database.EnsureCreated();
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Exception, Is.Null);
+    }
 
     [Test]
-    public async Task CheckHealthAsync_ExceptionThrown_ReturnsUnhealthy()
+    public async Task CheckHealthAsync_DatabaseAccessible_ReturnsDescriptiveMessage()
     {
-        // Arrange - disposed context will throw
-        var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        dbContext.Dispose(); // Dispose to cause exception
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
+      // Arrange
+      await using SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
 
-        // Assert
-        Assert.That(result.Status, Is.EqualTo(HealthStatus.Unhealthy));
+      await using AppDbContext dbContext = new(options);
+      dbContext.Database.EnsureCreated();
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Description, Does.Contain("accessible"));
+    }
+
+    [Test]
+    public async Task CheckHealthAsync_DatabaseAccessible_ReturnsHealthy()
+    {
+      // Arrange
+      await using SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
+
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
+
+      await using AppDbContext dbContext = new(options);
+      dbContext.Database.EnsureCreated();
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Status, Is.EqualTo(HealthStatus.Healthy));
     }
 
     [Test]
     public async Task CheckHealthAsync_ExceptionThrown_CapturesException()
     {
-        // Arrange - disposed context will throw
-        var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        dbContext.Dispose();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
+      // Arrange - disposed context will throw
+      SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
 
-        // Assert
-        Assert.That(result.Exception, Is.Not.Null);
+      AppDbContext dbContext = new(options);
+      dbContext.Database.EnsureCreated();
+      dbContext.Dispose();
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Exception, Is.Not.Null);
     }
 
     [Test]
     public async Task CheckHealthAsync_ExceptionThrown_MessageIndicatesFailure()
     {
-        // Arrange
-        var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        dbContext.Dispose();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
+      // Arrange
+      SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-        // Act
-        var result = await healthCheck.CheckHealthAsync(context);
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
 
-        // Assert
-        Assert.That(result.Description, Does.Contain("failed"));
+      AppDbContext dbContext = new(options);
+      await dbContext.Database.EnsureCreatedAsync();
+      await dbContext.DisposeAsync();
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Description, Does.Contain("failed"));
     }
-
-    #endregion
-
-    #region Cancellation Token
 
     [Test]
-    public async Task CheckHealthAsync_CancellationRequested_ThrowsOperationCanceledException()
+    public async Task CheckHealthAsync_ExceptionThrown_ReturnsUnhealthy()
     {
-        // Arrange
-        using var connection = new SqliteConnection("Filename=:memory:");
-        connection.Open();
-        
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        
-        using var dbContext = new AppDbContext(options);
-        dbContext.Database.EnsureCreated();
-        
-        var healthCheck = new DatabaseHealthCheck(dbContext);
-        var context = new HealthCheckContext
-        {
-            Registration = new HealthCheckRegistration("database", healthCheck, null, null)
-        };
-        
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
+      // Arrange - disposed context will throw
+      SqliteConnection connection = new("Filename=:memory:");
+      connection.Open();
 
-        // Act & Assert - should handle or propagate cancellation
-        // Note: The actual behavior depends on implementation
-        // Some implementations catch all exceptions, some propagate cancellation
-        try
-        {
-            var result = await healthCheck.CheckHealthAsync(context, cts.Token);
-            // If it catches the cancellation, it should return unhealthy
-            Assert.That(result.Status, Is.EqualTo(HealthStatus.Unhealthy));
-        }
-        catch (OperationCanceledException)
-        {
-            // If it propagates cancellation, that's also acceptable
-            Assert.Pass("Cancellation was propagated correctly");
-        }
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
+
+      AppDbContext dbContext = new(options);
+      await dbContext.Database.EnsureCreatedAsync();
+      await dbContext.DisposeAsync(); // Dispose to cause exception
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Status, Is.EqualTo(HealthStatus.Unhealthy));
     }
 
-    #endregion
-}
+    [Test]
+    public async Task CheckHealthAsync_InvalidConnectionString_ReturnsUnhealthy()
+    {
+      // Arrange
+      DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite("Data Source=nonexistent_path/invalid.db")
+        .Options;
 
+      await using AppDbContext dbContext = new(options);
+
+      DatabaseHealthCheck healthCheck = new(dbContext);
+      HealthCheckContext context = new()
+      {
+        Registration = new HealthCheckRegistration("database", healthCheck, null, null)
+      };
+
+      // Act
+      HealthCheckResult result = await healthCheck.CheckHealthAsync(context);
+
+      // Assert
+      Assert.That(result.Status, Is.EqualTo(HealthStatus.Unhealthy));
+    }
+  }

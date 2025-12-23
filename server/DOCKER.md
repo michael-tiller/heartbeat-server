@@ -80,6 +80,7 @@ Host=postgres;Port=5432;Database=heartbeat;Username=heartbeat_user;Password=hear
 ## Docker Compose Services
 
 ### `postgres`
+
 - PostgreSQL 16 Alpine image
 - Port: `5432`
 - Database: `heartbeat`
@@ -88,6 +89,7 @@ Host=postgres;Port=5432;Database=heartbeat;Username=heartbeat_user;Password=hear
 - Data persisted in `postgres_data` volume
 
 ### `server`
+
 - Built from `Dockerfile`
 - Port: `5166`
 - Depends on `postgres` service
@@ -103,6 +105,7 @@ dotnet watch run
 ```
 
 Use Docker Compose when you need:
+
 - PostgreSQL database
 - Production-like environment
 - Isolated containerized setup
@@ -132,6 +135,7 @@ If you see an error like `unable to get image` or `The system cannot find the fi
 ### Database Connection Issues
 
 Check PostgreSQL is healthy:
+
 ```bash
 docker-compose ps
 docker-compose logs postgres
@@ -140,6 +144,7 @@ docker-compose logs postgres
 ### Port Conflicts
 
 If port 5166 is already in use, modify `docker-compose.yml`:
+
 ```yaml
 ports:
   - "5167:5166"  # Map host port 5167 to container port 5166

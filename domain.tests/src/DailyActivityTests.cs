@@ -1,19 +1,15 @@
-using NUnit.Framework;
-using Heartbeat.Domain;
+namespace Heartbeat.Domain.Tests ;
 
-namespace Heartbeat.Domain.Tests;
-
-[TestFixture]
-public class DailyActivityTests
-{
+  [TestFixture]
+  public class DailyActivityTests
+  {
     [Test]
     public void DailyActivity_DefaultValuesAreSetCorrectly()
     {
-        // Arrange & Act
-        var activity = new DailyActivity();
+      // Arrange & Act
+      DailyActivity activity = new();
 
-        // Assert
-        Assert.That(activity.UpdatedAt, Is.Not.EqualTo(default(DateTime)));
+      // Assert
+      Assert.That(activity.UpdatedAt, Is.Not.EqualTo(default(DateTime)));
     }
-}
-
+  }

@@ -1,467 +1,451 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using Heartbeat.Contracts.DTOs;
+using Heartbeat.Server.Exceptions;
+using Heartbeat.Server.Middleware;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Heartbeat.Contracts;
-using Heartbeat.Server;
-using Heartbeat.Server.Exceptions;
-using Heartbeat.Server.Middleware;
 
-namespace Heartbeat.Server.Tests.Middleware;
+namespace Heartbeat.Server.Tests.Middleware ;
 
-/// <summary>
-/// Tests for exception handling middleware.
-/// Verifies exception-to-status mapping, error response shape, correlation ID propagation,
-/// and information hiding guarantees.
-/// 
-/// Tests ValidationException via invalid input to /register endpoint.
-/// Generic exceptions and UnauthorizedAccessException require isolated middleware tests.
-/// </summary>
-[TestFixture]
-[NonParallelizable]
-public class ExceptionMiddlewareTests
-{
-    private const string CorrelationIdHeader = "X-Correlation-ID";
-    
-    private WebApplicationFactory<Program>? _factory;
-    private HttpClient? _client;
-    private SqliteConnection? _connection;
+  /// <summary>
+  ///   Tests for exception handling middleware.
+  ///   Verifies exception-to-status mapping, error response shape, correlation ID propagation,
+  ///   and information hiding guarantees.
+  ///   Tests ValidationException via invalid input to /register endpoint.
+  ///   Generic exceptions and UnauthorizedAccessException require isolated middleware tests.
+  /// </summary>
+  [TestFixture]
+  [NonParallelizable]
+  public class ExceptionMiddlewareTests
+  {
+    #region Setup/Teardown
 
     [SetUp]
     public void SetUp()
     {
-        _connection = new SqliteConnection("Filename=:memory:");
-        _connection.Open();
+      connection = new SqliteConnection("Filename=:memory:");
+      connection.Open();
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+      factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+      {
+        builder.UseSetting("ASPNETCORE_ENVIRONMENT", "Testing");
+
+        builder.ConfigureServices(services =>
         {
-            builder.UseSetting("ASPNETCORE_ENVIRONMENT", "Testing");
-            
-            builder.ConfigureServices(services =>
-            {
-                var descriptor = services.FirstOrDefault(
-                    d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-                if (descriptor != null)
-                {
-                    services.Remove(descriptor);
-                }
-                
-                services.AddDbContext<AppDbContext>(options =>
-                {
-                    options.UseSqlite(_connection);
-                });
-                
-                // Disable API key auth for these tests
-                var apiKeyDescriptor = services.FirstOrDefault(
-                    d => d.ServiceType == typeof(ApiKeySettings));
-                if (apiKeyDescriptor != null)
-                {
-                    services.Remove(apiKeyDescriptor);
-                }
-                
-                var testSettings = new ApiKeySettings
-                {
-                    Enabled = false,
-                    Keys = new List<string>()
-                };
-                services.AddSingleton(testSettings);
-            });
-        });
+          ServiceDescriptor? descriptor = services.FirstOrDefault(
+            d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+          if (descriptor != null)
+            services.Remove(descriptor);
 
-        _client = _factory.CreateClient();
-        
-        using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        dbContext.Database.EnsureCreated();
+          services.AddDbContext<AppDbContext>(options => { options.UseSqlite(connection); });
+
+          // Disable API key auth for these tests
+          ServiceDescriptor? apiKeyDescriptor = services.FirstOrDefault(
+            d => d.ServiceType == typeof(ApiKeySettings));
+          if (apiKeyDescriptor != null)
+            services.Remove(apiKeyDescriptor);
+
+          ApiKeySettings testSettings = new()
+          {
+            Enabled = false,
+            Keys = []
+          };
+          services.AddSingleton(testSettings);
+        });
+      });
+
+      client = factory.CreateClient();
+
+      using IServiceScope scope = factory.Services.CreateScope();
+      AppDbContext dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+      dbContext.Database.EnsureCreated();
     }
 
     [TearDown]
     public void TearDown()
     {
-        _client?.Dispose();
-        _factory?.Dispose();
-        _connection?.Close();
-        _connection?.Dispose();
+      client?.Dispose();
+      factory?.Dispose();
+      connection?.Close();
+      connection?.Dispose();
     }
 
-    #region ValidationException Handling
+    #endregion
+
+    private const string CorrelationIdHeader = "X-Correlation-ID";
+
+    private WebApplicationFactory<Program>? factory;
+    private HttpClient? client;
+    private SqliteConnection? connection;
 
     [Test]
-    public async Task ValidationException_Returns400BadRequest()
+    public async Task ValidationException_ExposesValidationMessage_ControlCharacters()
     {
-        // Arrange - send request with invalid (too short) device ID
-        var request = new RegisterRequest("short");
+      // Arrange - device ID with control characters
+      RegisterRequest request = new("device\0id\nwith\tcontrol");
 
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
 
-        // Assert
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
-    }
-
-    [Test]
-    public async Task ValidationException_ReturnsProblemJsonContentType()
-    {
-        // Arrange
-        var request = new RegisterRequest("short");
-
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
-
-        // Assert - RFC 7807 requires application/problem+json
-        Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("application/problem+json"));
-    }
-
-    [Test]
-    public async Task ValidationException_ReturnsProblemDetailsShape()
-    {
-        // Arrange
-        var request = new RegisterRequest("short");
-
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
-
-        // Assert - RFC 7807 Problem Details shape
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
-        Assert.That(problem, Is.Not.Null);
-        Assert.That(problem!.Title, Is.EqualTo("Bad Request"));
-        Assert.That(problem.Status, Is.EqualTo(400));
-        Assert.That(problem.Detail, Is.Not.Null.And.Not.Empty);
-    }
-
-    [Test]
-    public async Task ValidationException_ExposesValidationMessage_TooShort()
-    {
-        // Arrange - device ID too short
-        var request = new RegisterRequest("short");
-
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
-
-        // Assert
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
-        Assert.That(problem?.Detail, Does.Contain("at least"));
-        Assert.That(problem?.Detail, Does.Contain("characters"));
+      // Assert
+      ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+      Assert.That(problem?.Detail, Does.Contain("invalid characters"));
     }
 
     [Test]
     public async Task ValidationException_ExposesValidationMessage_Empty()
     {
-        // Arrange - empty device ID triggers "DeviceId is required"
-        var request = new RegisterRequest("");
+      // Arrange - empty device ID triggers "DeviceId is required"
+      RegisterRequest request = new("");
 
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
 
-        // Assert
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
-        Assert.That(problem?.Detail, Does.Contain("required"));
+      // Assert
+      ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+      Assert.That(problem?.Detail, Does.Contain("required"));
     }
 
     [Test]
-    public async Task ValidationException_ExposesValidationMessage_ControlCharacters()
+    public async Task ValidationException_ExposesValidationMessage_TooShort()
     {
-        // Arrange - device ID with control characters
-        var request = new RegisterRequest("device\0id\nwith\tcontrol");
+      // Arrange - device ID too short
+      RegisterRequest request = new("short");
 
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
 
-        // Assert
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
-        Assert.That(problem?.Detail, Does.Contain("invalid characters"));
-    }
-
-    #endregion
-
-    #region Correlation ID on Validation Errors
-
-    [Test]
-    public async Task ValidationException_ResponseHeaderContainsCorrelationId()
-    {
-        // Arrange
-        var request = new RegisterRequest("short");
-
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
-
-        // Assert
-        Assert.That(response.Headers.Contains(CorrelationIdHeader), Is.True);
+      // Assert
+      ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+      Assert.That(problem?.Detail, Does.Contain("at least"));
+      Assert.That(problem?.Detail, Does.Contain("characters"));
     }
 
     [Test]
     public async Task ValidationException_PreservesClientCorrelationId()
     {
-        // Arrange
-        var clientCorrelationId = "validation-error-trace-12345";
-        var request = new RegisterRequest("short");
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/register");
-        httpRequest.Headers.Add(CorrelationIdHeader, clientCorrelationId);
-        httpRequest.Content = JsonContent.Create(request);
+      // Arrange
+      const string clientCorrelationId = "validation-error-trace-12345";
+      RegisterRequest request = new("short");
+      using HttpRequestMessage httpRequest = new(HttpMethod.Post, "/api/v1/register");
+      httpRequest.Headers.Add(CorrelationIdHeader, clientCorrelationId);
+      httpRequest.Content = JsonContent.Create(request);
 
-        // Act
-        var response = await _client!.SendAsync(httpRequest);
+      // Act
+      HttpResponseMessage response = await client!.SendAsync(httpRequest);
 
-        // Assert
-        var responseCorrelationId = response.Headers.GetValues(CorrelationIdHeader).FirstOrDefault();
-        Assert.That(responseCorrelationId, Is.EqualTo(clientCorrelationId));
+      // Assert
+      string? responseCorrelationId = response.Headers.GetValues(CorrelationIdHeader).FirstOrDefault();
+      Assert.That(responseCorrelationId, Is.EqualTo(clientCorrelationId));
     }
 
-    #endregion
+    [Test]
+    public async Task ValidationException_ResponseHeaderContainsCorrelationId()
+    {
+      // Arrange
+      RegisterRequest request = new("short");
 
-    #region Response Structure Validation
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
+
+      // Assert
+      Assert.That(response.Headers.Contains(CorrelationIdHeader), Is.True);
+    }
 
     [Test]
     public async Task ValidationException_ResponseIsCamelCase()
     {
-        // Arrange
-        var request = new RegisterRequest("short");
+      // Arrange
+      RegisterRequest request = new("short");
 
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
-        var content = await response.Content.ReadAsStringAsync();
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
+      string content = await response.Content.ReadAsStringAsync();
 
-        // Assert - JSON should use camelCase (RFC 7807 field names)
-        Assert.That(content, Does.Contain("\"detail\""));
-        Assert.That(content, Does.Contain("\"status\""));
-        Assert.That(content, Does.Contain("\"title\""));
+      // Assert - JSON should use camelCase (RFC 7807 field names)
+      Assert.That(content, Does.Contain("\"detail\""));
+      Assert.That(content, Does.Contain("\"status\""));
+      Assert.That(content, Does.Contain("\"title\""));
     }
 
     [Test]
     public async Task ValidationException_ResponseIsValidJson()
     {
-        // Arrange
-        var request = new RegisterRequest("short");
+      // Arrange
+      RegisterRequest request = new("short");
 
-        // Act
-        var response = await _client!.PostAsJsonAsync("/api/v1/register", request);
-        var content = await response.Content.ReadAsStringAsync();
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
+      string content = await response.Content.ReadAsStringAsync();
 
-        // Assert - should be parseable JSON
-        Assert.DoesNotThrow(() => System.Text.Json.JsonDocument.Parse(content));
-    }
-
-    #endregion
-}
-
-/// <summary>
-/// Isolated unit tests for ExceptionMiddleware exception-to-status mapping.
-/// Tests exception types that cannot be easily triggered via HTTP endpoints.
-/// </summary>
-[TestFixture]
-public class ExceptionMiddlewareUnitTests
-{
-    [Test]
-    public async Task ValidationException_IsMappedTo400()
-    {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new ValidationException("Test error"));
-        var context = CreateHttpContext();
-
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert
-        Assert.That(context.Response.StatusCode, Is.EqualTo(400));
+      // Assert - should be parseable JSON
+      Assert.DoesNotThrow(() => JsonDocument.Parse(content));
     }
 
     [Test]
-    public async Task ValidationException_MessageIsExposed()
+    public async Task ValidationException_Returns400BadRequest()
     {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new ValidationException("Specific validation error"));
-        var context = CreateHttpContext();
+      // Arrange - send request with invalid (too short) device ID
+      RegisterRequest request = new("short");
 
-        // Act
-        await middleware.InvokeAsync(context);
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
 
-        // Assert
-        var body = await ReadResponseBody(context);
-        Assert.That(body, Does.Contain("Specific validation error"));
+      // Assert
+      Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
     }
 
     [Test]
-    public async Task UnauthorizedAccessException_IsMappedTo401()
+    public async Task ValidationException_ReturnsProblemDetailsShape()
     {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new UnauthorizedAccessException("Secret details"));
-        var context = CreateHttpContext();
+      // Arrange
+      RegisterRequest request = new("short");
 
-        // Act
-        await middleware.InvokeAsync(context);
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
 
-        // Assert
-        Assert.That(context.Response.StatusCode, Is.EqualTo(401));
+      // Assert - RFC 7807 Problem Details shape
+      ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+      Assert.That(problem, Is.Not.Null);
+      Assert.That(problem!.Title, Is.EqualTo("Bad Request"));
+      Assert.That(problem.Status, Is.EqualTo(400));
+      Assert.That(problem.Detail, Is.Not.Null.And.Not.Empty);
     }
 
     [Test]
-    public async Task UnauthorizedAccessException_MessageIsHidden()
+    public async Task ValidationException_ReturnsProblemJsonContentType()
     {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new UnauthorizedAccessException("Secret details"));
-        var context = CreateHttpContext();
+      // Arrange
+      RegisterRequest request = new("short");
 
-        // Act
-        await middleware.InvokeAsync(context);
+      // Act
+      HttpResponseMessage response = await client!.PostAsJsonAsync("/api/v1/register", request);
 
-        // Assert - should NOT expose actual exception message
-        var body = await ReadResponseBody(context);
-        Assert.That(body, Does.Not.Contain("Secret details"));
-        Assert.That(body, Does.Contain("\"title\":\"Unauthorized\""));
+      // Assert - RFC 7807 requires application/problem+json
+      Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("application/problem+json"));
+    }
+  }
+
+  /// <summary>
+  ///   Isolated unit tests for ExceptionMiddleware exception-to-status mapping.
+  ///   Tests exception types that cannot be easily triggered via HTTP endpoints.
+  /// </summary>
+  [TestFixture]
+  public class ExceptionMiddlewareUnitTests
+  {
+    private static Task ThrowWithStackTrace()
+    {
+      throw new Exception("Sensitive info: password=secret123");
     }
 
-    [Test]
-    public async Task GenericException_IsMappedTo500()
+    private static DefaultHttpContext CreateHttpContext()
     {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new InvalidOperationException("Internal error"));
-        var context = CreateHttpContext();
-
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert
-        Assert.That(context.Response.StatusCode, Is.EqualTo(500));
+      DefaultHttpContext context = new();
+      context.Response.Body = new MemoryStream();
+      return context;
     }
 
-    [Test]
-    public async Task GenericException_MessageIsHidden()
+    private static async Task<string> ReadResponseBody(HttpContext context)
     {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new InvalidOperationException("Database connection failed"));
-        var context = CreateHttpContext();
-
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert - internal details should NEVER leak
-        var body = await ReadResponseBody(context);
-        Assert.That(body, Does.Not.Contain("Database"));
-        Assert.That(body, Does.Not.Contain("connection"));
-        Assert.That(body, Does.Contain("unexpected error"));
-    }
-
-    [Test]
-    public async Task GenericException_IncludesCorrelationId()
-    {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new Exception("Error"));
-        var context = CreateHttpContext();
-        context.TraceIdentifier = "test-correlation-id-12345";
-
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert
-        var body = await ReadResponseBody(context);
-        Assert.That(body, Does.Contain("test-correlation-id-12345"));
-    }
-
-    [Test]
-    public async Task GenericException_ReturnsProblemDetailsShape()
-    {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new Exception("Error"));
-        var context = CreateHttpContext();
-        context.TraceIdentifier = "trace-123";
-
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert - RFC 7807 ProblemDetails shape
-        var body = await ReadResponseBody(context);
-        Assert.That(body, Does.Contain("\"title\""));
-        Assert.That(body, Does.Contain("\"status\""));
-        Assert.That(body, Does.Contain("\"detail\""));
-        Assert.That(body, Does.Contain("\"correlationId\""));
-    }
-
-    [Test]
-    public async Task GenericException_DoesNotExposeStackTrace()
-    {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => ThrowWithStackTrace());
-        var context = CreateHttpContext();
-
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert
-        var body = await ReadResponseBody(context);
-        Assert.That(body, Does.Not.Contain("at "));
-        Assert.That(body, Does.Not.Contain("ThrowWithStackTrace"));
-        Assert.That(body, Does.Not.Contain(".cs"));
-    }
-
-    [Test]
-    public async Task GenericException_DoesNotExposeExceptionType()
-    {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new ArgumentNullException("param"));
-        var context = CreateHttpContext();
-
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert
-        var body = await ReadResponseBody(context);
-        Assert.That(body, Does.Not.Contain("ArgumentNullException"));
-        Assert.That(body, Does.Not.Contain("param"));
+      context.Response.Body.Seek(0, SeekOrigin.Begin);
+      using StreamReader reader = new(context.Response.Body);
+      return await reader.ReadToEndAsync();
     }
 
     [Test]
     public async Task AllExceptions_SetProblemJsonContentType()
     {
-        // Arrange
-        var middleware = new ExceptionMiddleware(_ => throw new Exception("Error"));
-        var context = CreateHttpContext();
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new Exception("Error"));
+      DefaultHttpContext context = CreateHttpContext();
 
-        // Act
-        await middleware.InvokeAsync(context);
+      // Act
+      await middleware.InvokeAsync(context);
 
-        // Assert - RFC 7807 requires application/problem+json
-        Assert.That(context.Response.ContentType, Does.StartWith("application/problem+json"));
+      // Assert - RFC 7807 requires application/problem+json
+      Assert.That(context.Response.ContentType, Does.StartWith("application/problem+json"));
+    }
+
+    [Test]
+    public async Task GenericException_DoesNotExposeExceptionType()
+    {
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new ArgumentNullException("param"));
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert
+      string body = await ReadResponseBody(context);
+      Assert.That(body, Does.Not.Contain("ArgumentNullException"));
+      Assert.That(body, Does.Not.Contain("param"));
+    }
+
+    [Test]
+    public async Task GenericException_DoesNotExposeStackTrace()
+    {
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => ThrowWithStackTrace());
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert
+      string body = await ReadResponseBody(context);
+      Assert.That(body, Does.Not.Contain("at "));
+      Assert.That(body, Does.Not.Contain("ThrowWithStackTrace"));
+      Assert.That(body, Does.Not.Contain(".cs"));
+    }
+
+    [Test]
+    public async Task GenericException_IncludesCorrelationId()
+    {
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new Exception("Error"));
+      DefaultHttpContext context = CreateHttpContext();
+      context.TraceIdentifier = "test-correlation-id-12345";
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert
+      string body = await ReadResponseBody(context);
+      Assert.That(body, Does.Contain("test-correlation-id-12345"));
+    }
+
+    [Test]
+    public async Task GenericException_IsMappedTo500()
+    {
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new InvalidOperationException("Internal error"));
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert
+      Assert.That(context.Response.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task GenericException_MessageIsHidden()
+    {
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new InvalidOperationException("Database connection failed"));
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert - internal details should NEVER leak
+      string body = await ReadResponseBody(context);
+      Assert.That(body, Does.Not.Contain("Database"));
+      Assert.That(body, Does.Not.Contain("connection"));
+      Assert.That(body, Does.Contain("unexpected error"));
+    }
+
+    [Test]
+    public async Task GenericException_ReturnsProblemDetailsShape()
+    {
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new Exception("Error"));
+      DefaultHttpContext context = CreateHttpContext();
+      context.TraceIdentifier = "trace-123";
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert - RFC 7807 ProblemDetails shape
+      string body = await ReadResponseBody(context);
+      Assert.That(body, Does.Contain("\"title\""));
+      Assert.That(body, Does.Contain("\"status\""));
+      Assert.That(body, Does.Contain("\"detail\""));
+      Assert.That(body, Does.Contain("\"correlationId\""));
     }
 
     [Test]
     public async Task NoException_PassesThrough()
     {
-        // Arrange
-        var nextCalled = false;
-        var middleware = new ExceptionMiddleware(_ =>
-        {
-            nextCalled = true;
-            return Task.CompletedTask;
-        });
-        var context = CreateHttpContext();
+      // Arrange
+      bool nextCalled = false;
+      ExceptionMiddleware middleware = new(_ =>
+      {
+        nextCalled = true;
+        return Task.CompletedTask;
+      });
+      DefaultHttpContext context = CreateHttpContext();
 
-        // Act
-        await middleware.InvokeAsync(context);
+      // Act
+      await middleware.InvokeAsync(context);
 
-        // Assert
-        Assert.That(nextCalled, Is.True);
-        Assert.That(context.Response.StatusCode, Is.EqualTo(200)); // Default
+      // Assert
+      Assert.That(nextCalled, Is.True);
+      Assert.That(context.Response.StatusCode, Is.EqualTo(200)); // Default
     }
 
-    private static Task ThrowWithStackTrace()
+    [Test]
+    public async Task UnauthorizedAccessException_IsMappedTo401()
     {
-        throw new Exception("Sensitive info: password=secret123");
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new UnauthorizedAccessException("Secret details"));
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert
+      Assert.That(context.Response.StatusCode, Is.EqualTo(401));
     }
 
-    private static DefaultHttpContext CreateHttpContext()
+    [Test]
+    public async Task UnauthorizedAccessException_MessageIsHidden()
     {
-        var context = new DefaultHttpContext();
-        context.Response.Body = new MemoryStream();
-        return context;
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new UnauthorizedAccessException("Secret details"));
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert - should NOT expose actual exception message
+      string body = await ReadResponseBody(context);
+      Assert.That(body, Does.Not.Contain("Secret details"));
+      Assert.That(body, Does.Contain("\"title\":\"Unauthorized\""));
     }
 
-    private static async Task<string> ReadResponseBody(HttpContext context)
+    [Test]
+    public async Task ValidationException_IsMappedTo400()
     {
-        context.Response.Body.Seek(0, SeekOrigin.Begin);
-        using var reader = new StreamReader(context.Response.Body);
-        return await reader.ReadToEndAsync();
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new ValidationException("Test error"));
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert
+      Assert.That(context.Response.StatusCode, Is.EqualTo(400));
     }
-}
+
+    [Test]
+    public async Task ValidationException_MessageIsExposed()
+    {
+      // Arrange
+      ExceptionMiddleware middleware = new(_ => throw new ValidationException("Specific validation error"));
+      DefaultHttpContext context = CreateHttpContext();
+
+      // Act
+      await middleware.InvokeAsync(context);
+
+      // Assert
+      string body = await ReadResponseBody(context);
+      Assert.That(body, Does.Contain("Specific validation error"));
+    }
+  }

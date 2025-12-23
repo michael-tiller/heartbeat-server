@@ -22,6 +22,7 @@ dotnet ef migrations add MigrationName --project Heartbeat.Server.csproj
 ```
 
 Example:
+
 ```bash
 dotnet ef migrations add AddActivityTracking
 ```
@@ -31,12 +32,14 @@ dotnet ef migrations add AddActivityTracking
 Migrations are automatically applied when the application starts (via `db.Database.Migrate()` in `Program.cs`).
 
 To manually apply migrations:
+
 ```bash
 cd server
 dotnet ef database update --project Heartbeat.Server.csproj
 ```
 
 To apply migrations to a specific version:
+
 ```bash
 dotnet ef database update MigrationName --project Heartbeat.Server.csproj
 ```
@@ -44,12 +47,14 @@ dotnet ef database update MigrationName --project Heartbeat.Server.csproj
 ### Rollback Migrations
 
 To rollback the last migration:
+
 ```bash
 cd server
 dotnet ef database update PreviousMigrationName --project Heartbeat.Server.csproj
 ```
 
 To remove the last migration (before applying it):
+
 ```bash
 cd server
 dotnet ef migrations remove --project Heartbeat.Server.csproj
@@ -58,6 +63,7 @@ dotnet ef migrations remove --project Heartbeat.Server.csproj
 ### List Migrations
 
 To see all migrations:
+
 ```bash
 cd server
 dotnet ef migrations list --project Heartbeat.Server.csproj
@@ -66,9 +72,9 @@ dotnet ef migrations list --project Heartbeat.Server.csproj
 ## Migration Files
 
 - **Migrations/** - Contains all migration files
-  - `YYYYMMDDHHMMSS_MigrationName.cs` - Migration code (Up/Down methods)
-  - `YYYYMMDDHHMMSS_MigrationName.Designer.cs` - Migration metadata
-  - `AppDbContextModelSnapshot.cs` - Current model snapshot
+    - `YYYYMMDDHHMMSS_MigrationName.cs` - Migration code (Up/Down methods)
+    - `YYYYMMDDHHMMSS_MigrationName.Designer.cs` - Migration metadata
+    - `AppDbContextModelSnapshot.cs` - Current model snapshot
 
 **Important**: All migration files should be committed to source control.
 
@@ -102,7 +108,8 @@ For production deployments:
 
 ## Transitioning from EnsureCreated() to Migrations
 
-If you have an existing database created with `EnsureCreated()`, you'll encounter an error when trying to apply migrations because EF Core doesn't know the migration was already applied.
+If you have an existing database created with `EnsureCreated()`, you'll encounter an error when trying to apply migrations because EF Core doesn't know the migration was already
+applied.
 
 ### Quick Fix (Development - Data Loss)
 
@@ -148,6 +155,7 @@ If you need to preserve existing data:
 ### Using the Helper Script
 
 Run `migrate-existing-db.bat` for an interactive guide:
+
 ```bash
 cd server
 migrate-existing-db.bat
@@ -158,6 +166,7 @@ migrate-existing-db.bat
 ### Migration Conflicts
 
 If you have migration conflicts (e.g., multiple developers created migrations):
+
 1. Pull latest changes
 2. Review conflicting migrations
 3. Create a new migration to resolve conflicts if needed
@@ -165,6 +174,7 @@ If you have migration conflicts (e.g., multiple developers created migrations):
 ### Database Out of Sync
 
 If your database is out of sync:
+
 ```bash
 # Check current migration status
 dotnet ef migrations list

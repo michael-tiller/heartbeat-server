@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/michael-tiller/heartbeat-server/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/michael-tiller/heartbeat-server/actions/workflows/ci-cd.yml)
 [![Container](https://img.shields.io/badge/container-ghcr.io-blue)](https://github.com/michael-tiller/heartbeat-server/pkgs/container/heartbeat-server)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/michael-tiller/heartbeat-server/actions/workflows/ci-cd.yml)
 
 ---
 

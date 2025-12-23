@@ -1,6 +1,6 @@
-namespace Heartbeat.Domain.Interfaces;
+namespace Heartbeat.Domain.Interfaces ;
 
-public interface IStreakCalculator
-{
+  public interface IStreakCalculator
+  {
     (int CurrentStreak, int LongestStreak) CalculateStreak(List<DailyActivity> activities, DateOnly today);
-}
+  }
