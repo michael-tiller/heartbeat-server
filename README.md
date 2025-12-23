@@ -10,6 +10,10 @@
 Heartbeat tracks daily user activity and calculates consecutive-day streaks.  
 The project demonstrates **backend correctness**, **test discipline**, and **API-driven mobile integration**—not feature breadth.
 
+### System Architecture
+
+![System Architecture Diagram](docs/diagram.png)
+
 ---
 
 ## What It Does
