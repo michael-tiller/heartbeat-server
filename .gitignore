@@ -1,0 +1,130 @@
+############################
+# OS / Editor / IDE
+############################
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.idea/
+.vscode/
+.vs/
+*.swp
+*.swo
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.csproj.user
+*.DotSettings
+*.DotSettings.user
+*.code-workspace
+
+############################
+# Logs
+############################
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+############################
+# Node / JS
+############################
+node_modules/
+
+.env
+.env.*
+!.env.example
+
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/install-state.gz
+
+.metro-health-check*
+*.tsbuildinfo
+
+############################
+# React Native - Android
+############################
+mobile/android/.gradle/
+mobile/android/**/build/
+mobile/android/app/.cxx/
+mobile/android/app/debug.keystore
+mobile/android/local.properties
+
+# Android / Gradle noise
+*.iml
+.gradle/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing keys (never commit)
+**/*.keystore
+**/*.jks
+
+############################
+# React Native - iOS
+############################
+mobile/ios/Pods/
+mobile/ios/build/
+mobile/ios/DerivedData/
+mobile/ios/xcuserdata/
+
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Keep workspace metadata if present
+*.xcworkspace
+!mobile/ios/*.xcworkspace/contents.xcworkspacedata
+
+############################
+# .NET
+############################
+**/bin/
+**/obj/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Local databases only
+*.db
+*.db-shm
+*.db-wal
+
+# Local-only config
+appsettings.Development.json
+secrets.json
+
+############################
+# Build artifacts
+############################
+dist/
+build/
+out/
+
+############################
+# Generated API / Contracts
+############################
+contracts/generated/
+contracts/generated/**/.last-spec.json
+contracts/spec/*.json
+!contracts/spec/.gitkeep
+
+############################
+# Docker
+############################
+docker-compose.override.yml
+*.env.docker
+/.nvmrc
+/mobile/.bundle/config
+/mobile/ios/.xcode.env
+/mobile/android/app/src/main/res/drawable/rn_edit_text_material.xml
+/server/Properties/launchSettings.json

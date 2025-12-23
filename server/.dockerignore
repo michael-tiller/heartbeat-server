@@ -1,0 +1,70 @@
+# Build outputs
+**/bin/
+**/obj/
+**/TestResults/
+**/coverage/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings
+*.DotSettings.user
+
+# Logs
+*.log
+logs/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Node modules (for mobile project)
+node_modules/
+**/node_modules/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker files
+docker-compose.yml
+.dockerignore
+Dockerfile
+
+# Test files
+**/*.Tests.csproj
+**/domain.tests/
+**/server.tests/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Mobile build artifacts
+mobile/android/build/
+mobile/android/.gradle/
+mobile/ios/build/
+mobile/ios/Pods/
+
+# Generated files
+contracts/generated/
+

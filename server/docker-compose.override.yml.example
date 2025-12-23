@@ -1,0 +1,24 @@
+# Example override file for local development
+# Copy this to docker-compose.override.yml (not tracked by git) to customize your setup
+
+services:
+  server:
+    environment:
+      # Override connection string if needed
+      # ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=heartbeat;Username=heartbeat_user;Password=heartbeat_password"
+      
+      # Enable more verbose logging in development
+      Serilog__MinimumLevel__Default: "Debug"
+    
+    # Uncomment to mount source for development (requires rebuild approach)
+    # volumes:
+    #   - ../server/src:/app/src:ro
+    #   - ../domain/src:/app/domain/src:ro
+
+  postgres:
+    # Override PostgreSQL settings if needed
+    # environment:
+    #   POSTGRES_PASSWORD: your_custom_password
+    ports:
+      - "5432:5432"  # Already exposed, but shown for reference
+

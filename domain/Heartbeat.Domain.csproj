@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    ⚠️ CRITICAL: This project must remain framework-free.
+    
+    DO NOT ADD:
+    - EF Core packages (Microsoft.EntityFrameworkCore.*)
+    - ASP.NET packages (Microsoft.AspNetCore.*)
+    - Serialization packages (Newtonsoft.Json, System.Text.Json for attributes)
+    
+    DO NOT ADD ATTRIBUTES TO DOMAIN CLASSES:
+    - [Key], [Required], [Table], [Column] (EF Core)
+    - [FromBody], [HttpPost] (ASP.NET)
+    - [JsonProperty], [JsonIgnore] (Serialization)
+    
+    All infrastructure configuration belongs in server/src/Persistence/AppDbContext.cs
+    using Fluent API, not attributes on domain classes.
+  -->
+
+</Project>

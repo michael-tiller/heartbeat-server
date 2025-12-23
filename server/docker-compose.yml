@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: heartbeat-postgres
+    environment:
+      POSTGRES_DB: heartbeat
+      POSTGRES_USER: heartbeat_user
+      POSTGRES_PASSWORD: heartbeat_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - heartbeat-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U heartbeat_user -d heartbeat" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    container_name: heartbeat-server
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=heartbeat;Username=heartbeat_user;Password=heartbeat_password"
+    ports:
+      - "5166:5166"
+    volumes:
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - heartbeat-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  heartbeat-network:
+    driver: bridge

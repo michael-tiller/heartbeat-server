@@ -1,0 +1,4 @@
+@Heartbeat.Server_HostAddress = http://localhost:5166
+
+GET {{Heartbeat.Server_HostAddress}}/health
+Accept: application/json

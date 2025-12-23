@@ -1,0 +1,11 @@
+{
+  "generatorName": "typescript-fetch",
+  "inputSpec": "http://localhost:5166/swagger/v1/swagger.json",
+  "outputDir": "../contracts/generated/mobile",
+  "additionalProperties": {
+    "typescriptThreePlus": true,
+    "supportsES6": true,
+    "withInterfaces": true,
+    "enumPropertyNaming": "camelCase"
+  }
+}
