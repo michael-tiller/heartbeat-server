@@ -1,5 +1,9 @@
 # Heartbeat
 
+[![CI](https://github.com/michael-tiller/heartbeat-server/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/michael-tiller/heartbeat-server/actions/workflows/ci-cd.yml)
+[![Container](https://img.shields.io/badge/container-ghcr.io-blue)](https://github.com/michael-tiller/heartbeat-server/pkgs/container/heartbeat-server)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/michael-tiller/heartbeat-server/actions/workflows/ci-cd.yml)
+
 ---
 
 ## Overview
@@ -66,6 +70,54 @@ Intentional separation:
 
 **Users**
 - `POST /api/v1/register` — Registers a device, records daily activity, returns the user's code
+
+---
+
+## Demo
+
+![Mobile App Screenshot](docs/mobile-demo.png)
+
+*Register a device and track your daily activity streak*
+
+**API Example:**
+
+```bash
+curl -X POST http://localhost:5166/api/v1/register \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "my-device-123"}'
+```
+
+Response:
+```json
+{
+  "userCode": "ABC123",
+  "currentStreak": 1,
+  "longestStreak": 1
+}
+```
+
+---
+
+## 60-Second Local Run
+
+Start the API and database with Docker Compose:
+
+```bash
+cd server
+docker compose up -d
+```
+
+Wait ~10 seconds for services to start, then:
+
+```bash
+curl http://localhost:5166/health
+```
+
+- **API**: `http://localhost:5166`
+- **Swagger**: `http://localhost:5166/swagger`
+- **Database**: PostgreSQL on `localhost:5432`
+
+Stop with: `docker compose down`
 
 ---
 
